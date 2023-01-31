@@ -14,25 +14,25 @@ GFW：Great Firewall (of the People’s Republic of China)，中国国家防火�
 
 形象的描述，在没有 GFW 的时代，访问互联网的方式如下
 
-![自由网络环境下的传输流程](https://user-images.githubusercontent.com/5773264/32371367-8c231024-c05e-11e7-87a8-f977577a6b89.png)
+![image](https://s1.ax1x.com/2023/01/31/pS0FHaV.png)
 
 
 
 GFW 出现之后，则变成
 
-![受限网络环境下的传输流程](https://user-images.githubusercontent.com/5773264/32371437-d8cb8852-c05e-11e7-9872-a6708bbe65ba.png)
+![image](https://s1.ax1x.com/2023/01/31/pS0FLPU.png)
 
 
 
 其内部构造如下
 
-![翻越GFW记/GFW内部结构](https://febers.github.io/%E7%BF%BB%E8%B6%8AGFW%E8%AE%B0/GFW%E5%86%85%E9%83%A8%E7%BB%93%E6%9E%84.jpg)
+![image](https://s1.ax1x.com/2023/01/31/pS0FxM9.png)
 
 
 
 它变成了本地浏览器和网站服务器之间的一道墙，阻拦了访问特定网站的请求，实际上，GFW 的拦截方式是多样的。
 
-
+<br/>
 
 ## 翻墙的几种方式
 
@@ -46,7 +46,7 @@ GFW 出现之后，则变成
 
   SSH（Secure Shell）是一个提供数据通信安全、远程登录、远程指令执行等功能的安全网络协议。搭建一个 SSH 隧道翻墙，只需要有一台支持 SSH 的墙外服务器，且该服务器能 SSH 连接即可。
 
-  ![SSH连接方式](https://febers.github.io/%E7%BF%BB%E8%B6%8AGFW%E8%AE%B0/SSH%E8%BF%9E%E6%8E%A5%E6%96%B9%E5%BC%8F.png)
+  ![image](https://s1.ax1x.com/2023/01/31/pS0FzrR.png)
 
 
 
@@ -64,7 +64,7 @@ GFW 出现之后，则变成
 
   技术原理上，Shadowsocks 是将原来 SSH 创建的 Socks5 协议拆开成 Server 端和 Client 端，其工作过程如下
 
-  ![SS连接方式](https://febers.github.io/%E7%BF%BB%E8%B6%8AGFW%E8%AE%B0/SS%E8%BF%9E%E6%8E%A5%E6%96%B9%E5%BC%8F.png)
+  ![image](https://s1.ax1x.com/2023/01/31/pS0kCa6.png)
 
   相比传统的 VPN (IKE, IPSec, PPTP…)，Shadowsocks 协议具有更好的灵活性和隐蔽性，且搭建相对简单，可以拥有相对传统VPN更快的速度和更高的稳定性；而对比 V2Ray 这种科学上网的集合体，Shadowsocks在服务端更加轻量，单一协议完善程度更高；同时，Shadowsocks在移动端有更丰富的客户端选择，兼容性和灵活性更优。
 
@@ -76,7 +76,7 @@ GFW 出现之后，则变成
 
   
 
-
+  <br/>
 
 ## 认识Shadowsocks
 
@@ -106,7 +106,7 @@ ss-server 的职责是在墙外服务器启动和监听一个服务，该服务�
 
 由于 ss-local 和 ss-server 端都需要用对称加密算法对数据进行加密和解密，因此这两端的加密方法和密码必须配置为一样。Shadowsocks 提供了一系列标准可靠的对称算法可供用户选择，例如 rc4、aes、des、chacha20 等等。Shadowsocks 对数据加密后再传输的目的是为了混淆原数据，让途中的防火墙无法得出传输的原数据。
 
-
+<br/>
 
 ## SOCKS5 协议介绍
 
@@ -261,13 +261,13 @@ SOCKS5 协议的目的其实就是为了把来自原本应该在本机直接请�
 3. 代理服务端去连接目标服务，成功后告诉本机；
 4. 本机开始发送原本应发送到目标服务的数据给代理服务端，由代理服务端完成数据转发。
 
-以上内容来自 [SOCKS5 协议规范 rfc1928](http://www.ietf.org/rfc/rfc1928.txt)。
+以上内容来自 [SOCKS5 协议规范 rfc1928](http://www.ietf.org/rfc/rfc1928.txt)。  
 
 
 
 
 
-
+<br/>
 
 ## 用C#实现
 
@@ -355,6 +355,7 @@ public class Password{
 namespace Core;
 
 public class Cipher{
+    public static List<byte> Key { set; private get; } = new();
     /// <summary>
     /// 加密
     /// </summary>
@@ -389,33 +390,675 @@ public class Cipher{
 
 
 
-
+<br/>
 
 #### 实现 local 端
 
 运行在本机的 local 端的职责是把本机程序发送给它的数据经过加密后转发给墙外的代理服务器，总体工作流程如下：
 
+1. 监听来自本机浏览器的代理请求；
+2. 转发前加密数据；
+3. 转发socket数据到墙外代理服务端；
+4. 把服务端返回的数据转发给用户的浏览器。
+
+实现以上功能的 local 端代码如下：
+
+```c#
+namespace Local;
+
+internal class TcpListen : IDisposable
+{
+    private int _port;
+    private int _localPort;
+    private readonly string _ip;
+
+    private readonly TcpListener _tcpListener;
+    
+    public TcpListen(string ipAddr, int port, string pass, int localPort)
+    {
+        _ip = ipAddr;
+        _port = port;
+        _localPort = localPort;
+        Cipher.Key = Password.GetPassBytes(pass);
+        _tcpListener = new TcpListener(IPAddress.Any, _localPort);
+    }
+
+    public void Start()
+    {
+        _tcpListener.Start();
+        _ = AcceptTcpAsync();
+    }
+
+    public void Stop()
+    {
+        _tcpListener.Stop();
+    }
+
+    private async Task AcceptTcpAsync()
+    {
+        try
+        {
+            while (true)
+            {
+                var tcpClient = await _tcpListener.AcceptTcpClientAsync();
+                _ = new TcpLocal(tcpClient, new TcpClient(_ip, _port));
+            }
+        }
+        catch (SocketException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _tcpListener.Stop();
+        GC.SuppressFinalize(this);
+    }
+}
+
+
+internal class TcpLocal : IDisposable
+{
+    private readonly byte[] _proxyBuff = new byte[1024 * 50];
+    private readonly byte[] _localBuff = new byte[1024 * 50];
+
+    public static List<(TcpClient tcpClient, UdpLocal UdpLocal)> UdpList { get; private set; } = new();
+    private readonly TcpClient _client;
+    private readonly TcpClient _proxy;
+    private readonly NetworkStream _clientStream;
+    private readonly NetworkStream _proxyStream;
+    public TcpLocal(TcpClient Client, TcpClient Proxy)
+    {
+        _client = Client;
+        _proxy = Proxy;
+        _clientStream = _client.GetStream();
+        _proxyStream = _proxy.GetStream();
+        _ = ClientReadAsync();
+        _ = ProxyReadInitAsync(1);
+    }
+
+    public async Task TcpSendAsync(NetworkStream stream, byte[] data)
+    {
+        try
+        {
+            if (data.Length > 0)
+            {
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                await stream.WriteAsync(data, cts.Token);
+            }
+            else
+            {
+                throw new SocketException();
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or TimeoutException)
+        {
+            Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 客户端加密后转发
+    /// </summary>
+    /// <returns></returns>
+    private async Task ClientReadAsync()
+    {
+        try
+        {
+            while (true)
+            {
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                var recLen = await _clientStream.ReadAsync(_localBuff, cts.Token);
+                var data = Cipher.EnBytes(_localBuff[..recLen]);
+                await TcpSendAsync(_proxyStream, data);
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException or TimeoutException)
+        {
+            Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 代理端接收初始化
+    /// </summary>
+    /// <param name="ar"></param>
+    /// <returns></returns>
+    private async Task ProxyReadInitAsync(int ar)
+    {
+        try
+        {
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+            var recLen = await _proxyStream.ReadAsync(_proxyBuff, cts.Token);
+            var data = Cipher.DeBytes(_proxyBuff[..recLen]);
+            if (ar == 2)
+            {
+                var remoteipEndpoint = _proxy.Client?.RemoteEndPoint as IPEndPoint;
+                if (remoteipEndpoint is not null)
+                {
+                    await TcpSendAsync(_clientStream, data);
+                    _ = ProxyReadAsync();
+                }
+            }
+            else
+            {
+                await TcpSendAsync(_clientStream, data);
+                _ = ProxyReadInitAsync(++ar);
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 代理接收转发
+    /// </summary>
+    /// <returns></returns>
+    private async Task ProxyReadAsync()
+    {
+        try
+        {
+            while (true)
+            {
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                var recLen = await _proxyStream.ReadAsync(_proxyBuff, cts.Token);
+                var data = Cipher.DeBytes(_proxyBuff[..recLen]);
+                await TcpSendAsync(_clientStream, data);
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException or OperationCanceledException)
+        {
+            Dispose();
+        }
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose();
+        _proxy.Dispose();
+        GC.SuppressFinalize(this);
+    }
+}
+
+
+```
+
+调用：
+
+```
+var tcpListen = new TcpListen("Server端IP", 3080, "123456", 1080);
+tcpListen.Start();
+```
 
 
 
 
 
+<br/>
+
+#### 实现 server 端
+
+运行在墙外代理服务器的 server 端职责如下：
+
+1. 监听来自本地代理客户端的请求；
+2. 解密本地代理客户端请求的数据，解析 SOCKS5 协议，连接用户浏览器真正想要连接的远程服务器；
+3. 转发用户浏览器真正想要连接的远程服务器返回的数据的加密后的内容到本地代理客户端。
+
+实现以上功能的代码如下：
+
+```c#
+namespace Server;
+
+internal class TcpListen
+{
+    private const int buffSize = 1024 * 15;
+    private const int timeout = 1000 * 5;
+    private readonly byte[] _dataBuff = new byte[buffSize];
+    private readonly TcpListener _tcpListener;
+
+    public TcpListen(IPAddress ip, int port, string pass)
+    {
+        Cipher.Key = Password.GetPassBytes(pass);
+        _tcpListener = new TcpListener(ip, port);
+        Console.WriteLine($"Socks Service init,Listen on port {port}, udp support status : {udpSupport}");
+    }
+
+    public async Task StartAsync()
+    {
+        try
+        {
+            _tcpListener.Start();
+            while (true)
+            {
+                var tcpClient = await _tcpListener.AcceptTcpClientAsync();
+                tcpClient.ReceiveTimeout = timeout;
+                _ = TcpConnectAsync(tcpClient);
+            }
+        }
+        catch (SocketException ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 发送数据
+    /// </summary>
+    /// <param name="tcpClient">TCPClient</param>
+    /// <param name="data">数据</param>
+    private async Task TcpSendAsync(TcpClient tcpClient, byte[] data)
+    {
+        await tcpClient.GetStream().WriteAsync(EnBytes(data));
+    }
+
+    /// <summary>
+    /// 接受客户端连接
+    /// </summary>
+    /// <param name="tcpClient"></param>
+    private async Task TcpConnectAsync(TcpClient tcpClient)
+    {
+        NetworkStream tcpStream = tcpClient.GetStream();
+        try
+        {
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+            var recLen = await tcpStream.ReadAsync(_dataBuff.AsMemory(0, buffSize), cts.Token);
+            if (recLen == 0)
+            {
+                tcpClient.Dispose();
+                return;
+            }
+            var data = Cipher.DeBytes(_dataBuff[..recLen]);
+            var type = GetProxyType(data);
+            //判断是否为无需账号密码模式
+            bool isNoAuth = false;
+            if (type is ProxyType.Connection)
+            {
+                var methodBytes = data.Skip(2).Take(data[1]);
+                isNoAuth = methodBytes.Contains(byte.MinValue);
+            }
+            //首次请求建立连接
+            if (isNoAuth)
+            {
+                Console.WriteLine($"receive connection request from {tcpClient.Client.RemoteEndPoint}");
+                await TcpSendAsync(tcpClient, new byte[] { 5, 0 });
+                _ = TcpConnectAsync(tcpClient);
+            }
+            //已建立连接,判断代理目标端信息
+            else if (type is not ProxyType.Connection or ProxyType.Unknown)
+            {
+                var proxyInfo = GetProxyInfo(data);
+                if (proxyInfo.Type is 1)
+                {
+                    //TCP
+                    TcpClient tcpProxy = TcpConnecte(proxyInfo.IP, proxyInfo.Port);
+                    if (tcpProxy.Connected)
+                    {
+                        _ = new TcpServer(tcpClient, tcpProxy);
+                        await TcpSendAsync(tcpClient, new byte[] { 5, 0, 0, 1, 0, 0, 0, 0, 0, 0 });
+                    }
+                    else
+                    {
+                        await TcpSendAsync(tcpClient, new byte[] { 5, 255 });
+                        throw new SocketException();
+                    }
+                }
+                else if (proxyInfo.Type is 3)
+                {
+                    //UDP
+                }
+            }
+            else
+            {
+                //不为连接且不为转发,有可能是密码错误
+                throw new NotSupportedException("Unknown forwarding type or wrong password, this connection will be closed.");
+            }
+        }
+        catch (Exception ex) when (ex is SocketException or NotSupportedException)
+        {
+            Close(tcpClient);
+            Console.WriteLine(ex.Message);
+        }
+    }
+    
+    /// <summary>
+    /// 建立TCP连接
+    /// </summary>
+    /// <param name="ip">IP</param>
+    /// <param name="port">PORT</param>
+    /// <returns></returns>
+    private TcpClient TcpConnecte(IPAddress ip, int port)
+    {
+        TcpClient tcpClient = new();
+        try
+        {
+            tcpClient.Connect(ip, port);
+        }
+        catch (SocketException)
+        {
+            tcpClient.Dispose();
+        }
+        return tcpClient;
+    }
+    
+    /// <summary>
+    /// 得到请求类型
+    /// </summary>
+    /// <param name="data"></param>
+    /// <returns></returns>
+    private ProxyType GetProxyType(byte[] data)
+    {
+        if (data.Length > 2 && data.Length == data[1] + 2)
+        {
+            return ProxyType.Connection;
+        }
+        else if (data.Length > 8)
+        {
+            if (data[1] == 1)
+            {
+                ///TCP请求
+                if (data[3] == 1 && data.Length == 10)
+                {
+                    return ProxyType.TcpProxyIPV4;
+                }
+                else if (data[3] == 3 && data.Length == (data.Skip(5).Take(data[4]).Count() + 7))
+                {
+                    return ProxyType.TcpProxyDomain;
+                }
+                else if (data[3] == 4 && data.Length == 22)
+                {
+                    return ProxyType.TcpProxyIPV6;
+                }
+            }
+            else if (data[1] == 3)
+            {
+                //UDP请求或转发
+                if (data[3] == 1 && data.Length == 10)
+                {
+                    return ProxyType.UdpProxyIPV4;
+                }
+                else if (data[3] == 3 && data.Length == (data.Skip(5).Take(data[4]).Count() + 7))
+                {
+                    return ProxyType.UdpProxyDomain;
+                }
+                else if (data[3] == 4 && data.Length == 22)
+                {
+                    return ProxyType.TcpProxyIPV6;
+                }
+            }
+        }
+        return ProxyType.Unknown;
+    }
+    
+    /// <summary>
+    /// 获取请求转发信息
+    /// </summary>
+    /// <param name="data"></param>
+    /// <returns>
+    /// int type代理协议 -1 未知,1:TCP,3:UDP
+    /// string IP
+    /// int PORT
+    /// </returns>
+    public (int Type, IPAddress IP, int Port) GetProxyInfo(byte[] data)
+    {
+        IPAddress? hostIp = null;
+        int port = 0;
+        var type = GetProxyType(data);
+        try
+        {
+            if (type is not ProxyType.Connection)
+            {
+                byte[] portBytes = new byte[2];
+                switch (type)
+                {
+                    case ProxyType.TcpProxyIPV4 or ProxyType.UdpProxyIPV4:
+                        //IPV4
+                        hostIp = new IPAddress(data.Skip(4).Take(4).ToArray());
+                        portBytes = (data.Skip(8).Take(2).ToArray());
+                        port = (portBytes[0] << 8) + portBytes[1];
+                        Console.WriteLine($"Receive tcp Ipv4 proxy request to {hostIp}:{port}");
+                        break;
+                    case ProxyType.TcpProxyDomain or ProxyType.UdpProxyDomain:
+                        //域名解析IP
+                        string Realm_Name = Encoding.UTF8.GetString(data.Skip(5).Take(data[4]).ToArray());
+                        hostIp = Dns.GetHostEntry(Realm_Name).AddressList[0];
+                        portBytes = (data.Skip(5 + data[4]).Take(2).ToArray());
+                        port = (portBytes[0] << 8) + portBytes[1];
+                        Console.WriteLine($"Receive tcp proxy request to {Realm_Name}({hostIp}:{port})");
+                        break;
+                    case ProxyType.TcpProxyIPV6 or ProxyType.UdpProxyIPV6:
+                        //IPV6
+                        hostIp = new IPAddress(data.Skip(4).Take(16).ToArray());
+                        portBytes = (data.Skip(8).Take(2).ToArray());
+                        port = (portBytes[0] << 8) + portBytes[1];
+                        Console.WriteLine($"Receive tcp Ipv6 proxy request to {hostIp}:{port}的代理请求");
+                        break;
+                }
+
+                if (hostIp != null)
+                {
+                    return (data[1], hostIp, port);
+                }
+
+            }
+        }
+        catch (IndexOutOfRangeException)
+        {
+        }
+        return (0, IPAddress.Parse("127.0.0.1"), 0);
+    }
+
+    /// <summary>
+    /// 关闭客户端连接
+    /// </summary>
+    /// <param name="tcpClient">客户端TCPClient</param>
+    private static void Close(TcpClient tcpClient)
+    {
+        try
+        {
+            if (tcpClient.Connected)
+            {
+                Console.WriteLine($"Close the client connection to {tcpClient.Client.RemoteEndPoint}");
+            }
+        }
+        catch (SocketException sex)
+        {
+            Console.WriteLine(sex.Message);
+        }
+        finally
+        {
+            tcpClient.Close();
+        }
+    }
+
+}
+
+
+public enum ProxyType
+{
+    Connection = 1,
+    TcpProxyIPV4,
+    TcpProxyDomain,
+    TcpProxyIPV6,
+    UdpProxyIPV4,
+    UdpProxyDomain,
+    UdpProxyIPV6,
+    Unknown = 500
+}
+
+
+internal class TcpServer
+{
+    private const int _buffSize = 1024 * 50;
+    private readonly byte[] _clientBuff = new byte[_buffSize];
+    private readonly byte[] _proxyBuff = new byte[_buffSize];
+    private readonly TcpClient _client;
+    private readonly TcpClient _proxy;
+    private readonly NetworkStream _clientStream;
+    private readonly NetworkStream _proxyStream;
+
+    public TcpServer(TcpClient tcpClient, TcpClient tcpProxy)
+    {
+        _proxy = tcpProxy;
+        _client = tcpClient;
+        _clientStream = _client.GetStream();
+        _proxyStream = _proxy.GetStream();
+        _ = TcpClientReceive();
+        _ = TcpProxyReceive();
+        Console.WriteLine($"Open the tcp proxy tunnel to {_client.Client.RemoteEndPoint}");
+    }
+
+    /// <summary>
+    /// 发送数据
+    /// </summary>
+    /// <param name="stream">TCP流</param>
+    /// <param name="data">数据</param>
+    private async Task TcpSendAsync(NetworkStream stream, byte[] data)
+    {
+        try
+        {
+            if (data.Length > 0)
+            {
+                await stream.WriteAsync(data);
+            }
+            else
+            {
+                throw new SocketException();
+            }
+        }
+        catch (SocketException)
+        {
+            ProxyClose();
+        }
+    }
+
+    /// <summary>
+    /// 客户端接收数据回调
+    /// </summary>
+    /// <param name="ar"></param>
+    private async Task TcpClientReceive()
+    {
+        while (true)
+        {
+            try
+            {
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                var recLen = await _clientStream.ReadAsync(_clientBuff.AsMemory(0, _buffSize), cts.Token);
+                await TcpSendAsync(_proxyStream, DeBytes(_clientBuff[..recLen]));
+
+            }
+            catch (SocketException)
+            {
+                ProxyClose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 代理端接收数据回调
+    /// </summary>
+    /// <param name="ar"></param>
+    private async Task TcpProxyReceive()
+    {
+        try
+        {
+            while (true)
+            {
+                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                var recLen = await _proxyStream.ReadAsync(_proxyBuff.AsMemory(0, _buffSize), cts.Token);
+                await TcpSendAsync(_clientStream, EnBytes(_proxyBuff[..recLen]));
+            }
+        }
+        catch (SocketException)
+        {
+            ProxyClose();
+        }
+    }
+
+    /// <summary>
+    /// 关闭代理隧道
+    /// </summary>
+    private void ProxyClose()
+    {
+        if (_client.Connected)
+        {
+
+            Console.WriteLine($"Close the client connection to {_client.Client.RemoteEndPoint}");
+            _client.Dispose();
+        }
+        if (_proxy.Connected)
+        {
+            Console.WriteLine($"Close the proxy connection to {_proxy.Client.RemoteEndPoint}");
+            _proxy.Dispose();
+        }
+    }
+
+    ~TcpServer()
+    {
+        _client?.Dispose();
+        _proxy?.Dispose();
+    }
+}
+
+
+```
+
+调用：
+
+```c#
+var listener = new TcpListen(IPAddress.Any, 3080, '123456');
+listener.StartAsync();
+```
 
 
 
+------
 
 
 
+以上就是实现一个简版 Shadowsocks 的核心代码。
+
+Local和Server都启动成功后，我们就来试试效果吧，由于我们常用 Chrome 浏览器，下面以 Chrome 为例讲解如何搭配我们写的程序进行科学上网。
+
+## 安装 [SwitchyOmega](https://github.com/FelisCatus/SwitchyOmega)
+
+第一步你需要安装 SwitchyOmega Chrome 插件，用于管理 Chrome 浏览器的网络代理。
 
 
 
+## 配置 SwitchyOmega
+
+#### 1. 先配置一个 SOCKS5 代理
+
+![image](https://s1.ax1x.com/2023/01/31/pS0P8z9.png)
 
 
 
+![image](https://s1.ax1x.com/2023/01/31/pS0Przd.png)
+
+注意端口要写对，要和 Local 监听的 SOCKS5 端口一致。
 
 
 
+#### 2. 再配置一个自动切换
+
+![image 20230131115142678](https://s1.ax1x.com/2023/01/31/pS0P5WQ.png)
+
+![image](https://s1.ax1x.com/2023/01/31/pS0PjFU.png)
+
+`Rule List URL` 地址为 `https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt`。
+
+![image](https://s1.ax1x.com/2023/01/31/pS0ipl9.png)
+
+记得选中自动切换（ss-auto）
+
+到此SwitchyOmega的设置就结束了。
 
 
 
+现在我们访问google看看：
 
+![image](https://s1.ax1x.com/2023/01/31/pS0Fhvj.png)
+
+成功。
