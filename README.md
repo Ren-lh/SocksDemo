@@ -1007,7 +1007,7 @@ internal class TcpServer
 调用：
 
 ```c#
-var listener = new TcpListen(IPAddress.Any, 3080, '123456');
+var listener = new TcpListen(IPAddress.Any, 3080, "123456");
 listener.StartAsync();
 ```
 
