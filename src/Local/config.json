@@ -1,0 +1,7 @@
+{
+  "serverIp": "127.0.0.1",
+  "serverPort": 6677,
+  "localPort": 1081,
+  "password": "1a2b3456",
+  "buffSize": 524288
+}

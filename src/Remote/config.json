@@ -1,0 +1,5 @@
+{
+  "port": 6677,
+  "password": "1a2b3456",
+  "buffSize": 524288
+}
